@@ -29,7 +29,7 @@
 ### 1. 克隆仓库
 
 ```bash
-git clone <仓库地址>
+git clone https://github.com/zhuning3645/snake_multiplayer.git
 cd snake_Multiplayer
 ```
 
@@ -69,7 +69,7 @@ npm start
 1. **准备大厅页面**
 ![准备大厅页面](./others/image_login.png)
 2.**游玩页面**
-！[游玩页面](./others/image_play.png)
+![游玩页面](./others/image_play.png)
 
 ## 文件结构
 
