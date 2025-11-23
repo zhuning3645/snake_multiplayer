@@ -11,12 +11,14 @@ const ws = new WebSocket(`ws://${location.host}`);
 
 ws.onmessage = (e) => {
   const msg = JSON.parse(e.data);
-  if (msg.type === 'init') {
+  if (msg.type === 'welcome') {
     myId = msg.id;
     myColor = msg.color;
   }
   if (msg.type === 'state') {
     draw(msg.state);
+    updateLobby(msg.state);
+    toggleViews(msg.state);
   }
 };
 
@@ -30,7 +32,8 @@ function draw(state) {
   // 画所有蛇
   for (const id in state.players) {
     const p = state.players[id];
-    p.body.forEach((seg, i) => {
+    const body = p.body || [];
+    body.forEach((seg, i) => {
       ctx.fillStyle = i === 0 ? '#fff' : p.color;
       if (p.dead) ctx.globalAlpha = 0.4;
       ctx.fillRect(seg.x * SIZE + 2, seg.y * SIZE + 2, SIZE - 4, SIZE - 4);
@@ -38,11 +41,11 @@ function draw(state) {
     });
 
     // 名字和分数
-    if (p.body.length > 0) {
+    if (body.length > 0) {
       ctx.fillStyle = '#fff';
       ctx.font = '12px Arial';
       ctx.textAlign = 'center';
-      ctx.fillText(`${p.name}: ${p.score}`, p.body[0].x * SIZE + SIZE/2, p.body[0].y * SIZE - 6);
+      ctx.fillText(`${p.name}: ${p.score}`, body[0].x * SIZE + SIZE/2, body[0].y * SIZE - 6);
     }
   }
 
@@ -77,3 +80,37 @@ setInterval(() => {
     ws.send(JSON.stringify({ type: 'direction', dir: directionQueue.shift() }));
   }
 }, 50);
+
+// 新增：处理大厅逻辑
+function updateLobby(state) {
+  const onlineCount = Object.keys(state.players).length;
+  document.getElementById('online').textContent = onlineCount;
+
+  const playerList = document.getElementById('playerList');
+  playerList.innerHTML = '';
+  Object.values(state.players).forEach(p => {
+    const div = document.createElement('div');
+    div.textContent = `${p.name}: ${p.ready ? '已准备' : '未准备'}`;
+    div.style.color = p.color;
+    playerList.appendChild(div);
+  });
+}
+
+function toggleViews(state) {
+  const myPlayer = state.players[myId];
+  if (myPlayer && myPlayer.ready) {
+    document.getElementById('lobby').style.display = 'none';
+    document.getElementById('gameArea').style.display = 'block';
+  } else {
+    document.getElementById('lobby').style.display = 'block';
+    document.getElementById('gameArea').style.display = 'none';
+  }
+}
+
+// 新增：准备按钮逻辑
+let isReady = false;
+document.getElementById('readyBtn').addEventListener('click', () => {
+  isReady = !isReady;
+  ws.send(JSON.stringify({ type: 'ready', ready: isReady }));
+  document.getElementById('readyBtn').textContent = isReady ? '取消准备' : '准备';
+});

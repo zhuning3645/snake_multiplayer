@@ -112,66 +112,115 @@ wss.on('connection', async (ws) => {
   const colors = ['#ff5722','#4caf50','#2196f3','#e91e63','#ffc107','#9c27b0'];
   const color = colors[Math.floor(Math.random() * colors.length)];
 
-  // 创建新玩家
-  const newPlayer = {
-    x: Math.floor(GRID_SIZE / 2),
-    y: Math.floor(GRID_SIZE / 2),
-    dir: 'RIGHT',
-    body: [],
-    color,
-    score: 0,
-    name: `Player${playerId.slice(-4)}`,
-    dead: false
-  };
-  // 初始化身体
-  for (let i = INITIAL_LENGTH - 1; i >= 0; i--) {
-    newPlayer.body.push({ x: newPlayer.x - i, y: newPlayer.y });
-  }
-
+  // 新玩家默认「未准备」状态，只存基本信息
   const state = await getGameState();
-  state.players[playerId] = newPlayer;
+  state.players[playerId] = {
+    color,
+    name: `Player${playerId.slice(-4)}`,
+    score: 0,
+    ready: false,
+    body: [],
+    dead: true
+  };
   await Redis.set(ROOM, JSON.stringify(state));
-  broadcastState();
 
-  ws.send(JSON.stringify({ type: 'init', id: playerId, color }));
+  // 告诉客户端自己的 id 和颜色 + 当前完整状态
+  ws.send(JSON.stringify({
+    type: 'welcome',
+    id: playerId,
+    color,
+    state
+  }));
 
-  // 监听 Redis 广播，转发给这个 ws
+  // 订阅广播
   const sub = Redis.duplicate();
   sub.subscribe(ROOM);
-  sub.on('message', (channel, message) => {
-    if (channel === ROOM) ws.send(message);
-  });
+  sub.on('message', (_, message) => ws.send(message));
+
 
   ws.on('message', async (data) => {
     try {
       const msg = JSON.parse(data);
+
+      // 1. 准备/取消准备
+      if (msg.type === 'ready') {
+        if (msg.ready) {
+          await Redis.sadd(READY_SET, playerId);
+          await spawnPlayer(playerId);        // 真正出生
+        } else {
+          await Redis.srem(READY_SET, playerId);
+          await respawnToLobby(playerId);     // 回到大厅
+        }
+        broadcastState();
+      }
+
+      // 2. 方向控制（只有已准备的才能发）
       if (msg.type === 'direction' && ['UP','DOWN','LEFT','RIGHT'].includes(msg.dir)) {
+        const readyIds = await getReadyPlayers();
+        if (!readyIds.has(playerId)) return;
+
         const state = await getGameState();
         const p = state.players[playerId];
         if (p && !p.dead) {
-          // 防止 180 度掉头
-          if (
-            (p.dir === 'UP' && msg.dir === 'DOWN') ||
-            (p.dir === 'DOWN' && msg.dir === 'UP') ||
-            (p.dir === 'LEFT' && msg.dir === 'RIGHT') ||
-            (p.dir === 'RIGHT' && msg.dir === 'LEFT')
-          ) return;
-
+          // 防止180度掉头（同之前）
+          const opposite = {UP:'DOWN', DOWN:'UP', LEFT:'RIGHT', RIGHT:'LEFT'};
+          if (p.dir === opposite[msg.dir]) return;
           p.dir = msg.dir;
           await Redis.set(ROOM, JSON.stringify(state));
         }
       }
-    } catch (e) { }
+    } catch (e) { console.error(e); }
   });
 
   ws.on('close', async () => {
     const state = await getGameState();
     delete state.players[playerId];
+    await Redis.srem(READY_SET, playerId);
     await Redis.set(ROOM, JSON.stringify(state));
     sub.quit();
     broadcastState();
   });
 });
+
+// 安全随机出生点
+async function spawnPlayer(id) {
+  const state = await getGameState();
+  const p = state.players[id];
+  if (!p) return;
+
+  // 找一个空位，最多尝试 100 次
+  for (let i = 0; i < 100; i++) {
+    const x = Math.floor(Math.random() * GRID_SIZE);
+    const y = Math.floor(Math.random() * GRID_SIZE);
+    const occupied = Object.values(state.players).some(player => 
+      player.body && player.body.some(seg => seg.x === x && seg.y === y)
+    );
+    if (!occupied) {
+      p.x = x; p.y = y;
+      p.dir = 'RIGHT';
+      p.body = [];
+      p.dead = false;
+      p.ready = true;
+      for (let i = INITIAL_LENGTH - 1; i >= 0; i--) {
+        p.body.push({ x: x - i, y });
+      }
+      await Redis.set(ROOM, JSON.stringify(state));
+      return;
+    }
+  }
+}
+
+// 死亡或取消准备 → 回到大厅（清空身体）
+async function respawnToLobby(id) {
+  const state = await getGameState();
+  const p = state.players[id];
+  if (p) {
+    p.body = [];
+    p.dead = true;
+    p.ready = false;
+    await Redis.set(ROOM, JSON.stringify(state));
+  }
+}
 
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => {

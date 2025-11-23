@@ -2,13 +2,22 @@
 <html lang="zh-CN">
 <head>
   <meta charset="UTF-8">
-  <title>多人贪吃蛇</title>
+  <title>多人贪吃蛇 - 带准备大厅</title>
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
-  <h1>多人贪吃蛇（WebSocket + Redis）</h1>
-  <canvas id="game" width="600" height="600"></canvas>
-  <div id="scoreboard"></div>
+  <div id="lobby">
+    <h1>多人贪吃蛇</h1>
+    <p>当前在线：<span id="online">0</span> 人</p>
+    <button id="readyBtn">准备</button>
+    <div id="playerList"></div>
+  </div>
+
+  <div id="gameArea" style="display:none">
+    <canvas id="game" width="600" height="600"></canvas>
+    <div id="scoreboard"></div>
+  </div>
+
   <script src="game.js"></script>
 </body>
 </html>
