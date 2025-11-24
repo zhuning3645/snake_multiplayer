@@ -11,7 +11,7 @@ const wss = new WebSocket.Server({ server });
 app.use(express.static('public'));
 
 const ROOM = 'snake:room1';        // 所有玩家共用同一个房间
-const TICK_RATE = 100;             // 10 FPS (100ms 一帧)
+const TICK_RATE = 200;             // 5 FPS (200ms 一帧)
 const GRID_SIZE = 30;              // 30x30 格子
 const INITIAL_LENGTH = 3;
 const READY_SET = 'snake:ready_players';   // 新增：用 Set 保存已准备的玩家ID
@@ -38,6 +38,23 @@ function generateFood(exclude = []) {
     if (!exclude.some(p => p.x === x && p.y === y)) {
       return { x, y };
     }
+  }
+}
+
+async function clearRedisState() {
+  try {
+    await Redis.del(ROOM, READY_SET);
+    let cursor = '0';
+    do {
+      const res = await Redis.scan(cursor, 'MATCH', 'snake:*', 'COUNT', 200);
+      cursor = res[0];
+      const keys = res[1];
+      if (keys && keys.length) {
+        await Redis.del(...keys);
+      }
+    } while (cursor !== '0');
+  } catch (e) {
+    console.error(e);
   }
 }
 
@@ -74,6 +91,7 @@ async function gameLoop() {
     // 撞墙
     if (head.x < 0 || head.x >= GRID_SIZE || head.y < 0 || head.y >= GRID_SIZE) {
       p.dead = true;
+      p.body = [];
       continue;
     }
 
@@ -82,6 +100,7 @@ async function gameLoop() {
       const body = state.players[pid].body;
       if (body.some(seg => seg.x === head.x && seg.y === head.y)) {
         p.dead = true;
+        p.body = [];
         break;
       }
     }
@@ -104,7 +123,12 @@ async function gameLoop() {
   broadcastState();
 }
 
-setInterval(gameLoop, TICK_RATE);
+async function init() {
+  await clearRedisState();
+  setInterval(gameLoop, TICK_RATE);
+}
+
+init();
 
 // WebSocket 连接处理
 wss.on('connection', async (ws) => {
