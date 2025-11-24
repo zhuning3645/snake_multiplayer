@@ -67,9 +67,10 @@ npm start
 
 ## 游戏页面
 1. **准备大厅页面**
-![准备大厅页面](./others/image_login.png)
+![准备大厅页面](./assets/image_login.png)
 2.**游玩页面**
-![游玩页面](./others/image_play.png)
+![游玩页面](./assets/image_play2.png)
+![游玩页面2](./assets/image_play.png)
 
 ## 文件结构
 
